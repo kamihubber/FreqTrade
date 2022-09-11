@@ -19,12 +19,11 @@ from freqtrade.loggers import setup_logging_pre
 
 logger = logging.getLogger('freqtrade')
 
-
 def main(sysargv: List[str] = None) -> None:
     """
     This function will initiate the bot and start the trading loop.
     :return: None
-    """
+    """    
 
     return_code: Any = 1
     try:

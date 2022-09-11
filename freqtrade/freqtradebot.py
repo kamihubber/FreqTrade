@@ -359,10 +359,22 @@ class FreqtradeBot(LoggingMixin):
             logger.info("Active pair whitelist is empty.")
             return trades_created
         # Remove pairs for currently opened trades from the whitelist
+        # for trade in Trade.get_open_trades():
+        #     if trade.pair in whitelist:
+        #         whitelist.remove(trade.pair)
+        #         logger.debug('Ignoring %s in pair whitelist', trade.pair)
+
+        #km - check timing from last buy
+        #open_trades = Trade.get_trades([Trade.is_open.is_(True),Trade.pair == ""]).all()
         for trade in Trade.get_open_trades():
             if trade.pair in whitelist:
-                whitelist.remove(trade.pair)
-                logger.debug('Ignoring %s in pair whitelist', trade.pair)
+                a = datetime.now(timezone.utc)
+                import pytz
+                mytimezone = pytz.timezone("UTC")
+                b =  mytimezone.localize(trade.open_date)                
+                if (a - b).total_seconds() <= self.config.get('multibuy', {}).get('multibuy_time_gap', {}) :
+                     whitelist.remove(trade.pair)
+                     logger.debug('Ignoring %s in pair whitelist because of close buy time', trade.pair)
 
         if not whitelist:
             logger.info("No currency pair in active pair whitelist, "

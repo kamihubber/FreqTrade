@@ -1,0 +1,62 @@
+import _thread
+from multiprocessing.pool import AsyncResult
+from RunBotForSingleUser import RunSingleBot 
+from main import main
+import sys
+import asyncio
+
+from multiprocessing import Process
+
+import RunBotForSingleUser as SingleBot
+
+from threading import Thread
+
+if __name__ == "__main__":
+    loop = asyncio.new_event_loop()
+    t1 = Thread(target = SingleBot.RunSingleBot2,args = (r'F:\Projects\Python\FreqTrade\freqtrade\user_data\configs\config.json','AverageStrategy',loop ))    
+    #loop2 = asyncio.new_event_loop()
+    #t2 = Thread(target = SingleBot.RunSingleBot2,args = (r'F:\Projects\Python\FreqTrade\freqtrade\user_data\configs\config1.json','AverageStrategy',loop2 ))
+    t1.setDaemon(True)
+    #t2.setDaemon(True)
+    t1.start()
+    #t2.start()
+
+    # loop3 = asyncio.new_event_loop()
+    # t3 = Thread(target = SingleBot.RunSingleBot2,args = (r'F:\Projects\Python\FreqTrade\freqtrade\user_data\configs\config2.json','AverageStrategy',loop3 ))    
+    # loop4 = asyncio.new_event_loop()
+    # t4 = Thread(target = SingleBot.RunSingleBot2,args = (r'F:\Projects\Python\FreqTrade\freqtrade\user_data\configs\config3.json','AverageStrategy',loop4 ))
+    # t3.setDaemon(True)
+    # t4.setDaemon(True)
+    # t3.start()
+    # t4.start()
+
+    # loop5 = asyncio.new_event_loop()
+    # t5 = Thread(target = SingleBot.RunSingleBot2,args = (r'F:\Projects\Python\FreqTrade\freqtrade\user_data\configs\config2.json','AverageStrategy',loop5 ))    
+    # loop6 = asyncio.new_event_loop()
+    # t6 = Thread(target = SingleBot.RunSingleBot2,args = (r'F:\Projects\Python\FreqTrade\freqtrade\user_data\configs\config3.json','AverageStrategy',loop6 ))
+    # t5.setDaemon(True)
+    # t6.setDaemon(True)
+    # t5.start()
+    # t6.start()
+
+    while True:
+        pass
+
+# def runA():
+#     while True:
+#         print( 'A\n')
+
+# def runB():
+#     while True:
+#         print('B\n') 
+
+# if __name__ == "__main__":
+#     t1 = Thread(target = runA)
+#     t2 = Thread(target = runB)
+#     t1.setDaemon(True)
+#     t2.setDaemon(True)
+#     t1.start()
+#     t2.start()
+#     while True:
+#         pass
+
