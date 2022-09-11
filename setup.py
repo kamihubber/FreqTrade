@@ -10,13 +10,18 @@ hyperopt = [
     'filelock',
     'joblib',
     'progressbar2',
-    'psutil',
-    ]
+]
+
+freqai = [
+    'scikit-learn',
+    'joblib',
+    'catboost; platform_machine != "aarch64"',
+    'lightgbm',
+]
 
 develop = [
     'coveralls',
     'flake8',
-    'flake8-type-annotations',
     'flake8-tidy-imports',
     'mypy',
     'pytest',
@@ -31,9 +36,9 @@ jupyter = [
     'nbstripout',
     'ipykernel',
     'nbconvert',
-    ]
+]
 
-all_extra = plot + develop + jupyter + hyperopt
+all_extra = plot + develop + jupyter + hyperopt + freqai
 
 setup(
     tests_require=[
@@ -41,17 +46,16 @@ setup(
         'pytest-asyncio',
         'pytest-cov',
         'pytest-mock',
-        ],
+    ],
     install_requires=[
         # from requirements.txt
-        'ccxt>=1.50.48',
+        'ccxt>=1.92.9',
         'SQLAlchemy',
         'python-telegram-bot>=13.4',
         'arrow>=0.17.0',
         'cachetools',
         'requests',
         'urllib3',
-        'wrapt',
         'jsonschema',
         'TA-Lib',
         'pandas-ta',
@@ -60,6 +64,7 @@ setup(
         'pycoingecko',
         'py_find_1st',
         'python-rapidjson',
+        'orjson',
         'sdnotify',
         'colorama',
         'jinja2',
@@ -71,14 +76,17 @@ setup(
         'blosc',
         'fastapi',
         'uvicorn',
+        'psutil',
         'pyjwt',
-        'aiofiles'
+        'aiofiles',
+        'schedule'
     ],
     extras_require={
         'dev': all_extra,
         'plot': plot,
         'jupyter': jupyter,
         'hyperopt': hyperopt,
+        'freqai': freqai,
         'all': all_extra,
     },
 )

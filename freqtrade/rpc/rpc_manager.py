@@ -2,6 +2,7 @@
 This module contains class to manage RPC communications (Telegram, API, ...)
 """
 import logging
+from collections import deque
 from typing import Any, Dict, List
 
 from freqtrade.enums import RPCMessageType
@@ -26,6 +27,12 @@ class RPCManager:
             logger.info('Enabling rpc.telegram ...')
             from freqtrade.rpc.telegram import Telegram
             self.registered_modules.append(Telegram(self._rpc, config))
+
+        # Enable discord
+        if config.get('discord', {}).get('enabled', False):
+            logger.info('Enabling rpc.discord ...')
+            from freqtrade.rpc.discord import Discord
+            self.registered_modules.append(Discord(self._rpc, config))
 
         # Enable Webhook
         if config.get('webhook', {}).get('enabled', False):
@@ -60,12 +67,27 @@ class RPCManager:
         }
         """
         logger.info('Sending rpc message: %s', msg)
+        if 'pair' in msg:
+            msg.update({
+                'base_currency': self._rpc._freqtrade.exchange.get_pair_base_currency(msg['pair'])
+                })
         for mod in self.registered_modules:
             logger.debug('Forwarding message to rpc.%s', mod.name)
             try:
                 mod.send_msg(msg)
             except NotImplementedError:
                 logger.error(f"Message type '{msg['type']}' not implemented by handler {mod.name}.")
+
+    def process_msg_queue(self, queue: deque) -> None:
+        """
+        Process all messages in the queue.
+        """
+        while queue:
+            msg = queue.popleft()
+            self.send_msg({
+                'type': RPCMessageType.STRATEGY_MSG,
+                'msg': msg,
+            })
 
     def startup_messages(self, config: Dict[str, Any], pairlist, protections) -> None:
         if config['dry_run']:
@@ -81,12 +103,14 @@ class RPCManager:
         timeframe = config['timeframe']
         exchange_name = config['exchange']['name']
         strategy_name = config.get('strategy', '')
+        pos_adjust_enabled = 'On' if config['position_adjustment_enable'] else 'Off'
         self.send_msg({
             'type': RPCMessageType.STARTUP,
             'status': f'*Exchange:* `{exchange_name}`\n'
                       f'*Stake per trade:* `{stake_amount} {stake_currency}`\n'
                       f'*Minimum ROI:* `{minimal_roi}`\n'
                       f'*{"Trailing " if trailing_stop else ""}Stoploss:* `{stoploss}`\n'
+                      f'*Position adjustment:* `{pos_adjust_enabled}`\n'
                       f'*Timeframe:* `{timeframe}`\n'
                       f'*Strategy:* `{strategy_name}`'
         })

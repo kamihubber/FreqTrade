@@ -2,7 +2,7 @@ import logging
 from ipaddress import IPv4Address
 from typing import Any, Dict
 
-import rapidjson
+import orjson
 import uvicorn
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,7 +24,7 @@ class FTJSONResponse(JSONResponse):
         Use rapidjson for responses
         Handles NaN and Inf / -Inf in a javascript way by default.
         """
-        return rapidjson.dumps(content).encode("utf-8")
+        return orjson.dumps(content, option=orjson.OPT_SERIALIZE_NUMPY)
 
 
 class ApiServer(RPCHandler):
@@ -41,6 +41,8 @@ class ApiServer(RPCHandler):
     _has_rpc: bool = False
     _bgtask_running: bool = False
     _config: Dict[str, Any] = {}
+    # Exchange - only available in webserver mode.
+    _exchange = None
 
     def __new__(cls, *args, **kwargs):
         """

@@ -24,7 +24,7 @@ def start_hyperopt_list(args: Dict[str, Any]) -> None:
 
     print_colorized = config.get('print_colorized', False)
     print_json = config.get('print_json', False)
-    export_csv = config.get('export_csv', None)
+    export_csv = config.get('export_csv')
     no_details = config.get('hyperopt_list_no_details', False)
     no_header = False
 
@@ -96,7 +96,7 @@ def start_hyperopt_show(args: Dict[str, Any]) -> None:
         if 'strategy_name' in metrics:
             strategy_name = metrics['strategy_name']
             show_backtest_result(strategy_name, metrics,
-                                 metrics['stake_currency'])
+                                 metrics['stake_currency'], config.get('backtest_breakdown', []))
 
             HyperoptTools.try_export_params(config, strategy_name, val)
 

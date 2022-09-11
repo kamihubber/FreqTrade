@@ -2,11 +2,31 @@ import asyncio
 import logging
 import time
 from functools import wraps
+from typing import Any, Callable, Optional, TypeVar, cast, overload
 
 from freqtrade.exceptions import DDosProtection, RetryableOrderError, TemporaryError
+from freqtrade.mixins import LoggingMixin
 
 
 logger = logging.getLogger(__name__)
+__logging_mixin = None
+
+
+def _reset_logging_mixin():
+    """
+    Reset global logging mixin - used in tests only.
+    """
+    global __logging_mixin
+    __logging_mixin = LoggingMixin(logger)
+
+
+def _get_logging_mixin():
+    # Logging-mixin to cache kucoin responses
+    # Only to be used in retrier
+    global __logging_mixin
+    if not __logging_mixin:
+        __logging_mixin = LoggingMixin(logger)
+    return __logging_mixin
 
 
 # Maximum default retry count.
@@ -16,38 +36,55 @@ API_FETCH_ORDER_RETRY_COUNT = 5
 
 BAD_EXCHANGES = {
     "bitmex": "Various reasons.",
-    "bitstamp": "Does not provide history. "
-                "Details in https://github.com/freqtrade/freqtrade/issues/1983",
-    "phemex": "Does not provide history. ",
+    "phemex": "Does not provide history.",
+    "probit": "Requires additional, regular calls to `signIn()`.",
     "poloniex": "Does not provide fetch_order endpoint to fetch both open and closed orders.",
 }
 
 MAP_EXCHANGE_CHILDCLASS = {
     'binanceus': 'binance',
     'binanceje': 'binance',
+    'binanceusdm': 'binance',
+    'okex': 'okx',
+    'gate': 'gateio',
 }
 
+SUPPORTED_EXCHANGES = [
+    'binance',
+    'bittrex',
+    'ftx',
+    'gateio',
+    'huobi',
+    'kraken',
+    'okx',
+]
 
 EXCHANGE_HAS_REQUIRED = [
     # Required / private
     'fetchOrder',
     'cancelOrder',
     'createOrder',
-    # 'createLimitOrder', 'createMarketOrder',
     'fetchBalance',
 
     # Public endpoints
-    'loadMarkets',
     'fetchOHLCV',
 ]
 
 EXCHANGE_HAS_OPTIONAL = [
     # Private
     'fetchMyTrades',  # Trades for order - fee detection
+    'createLimitOrder', 'createMarketOrder',  # Either OR for orders
+    # 'setLeverage',  # Margin/Futures trading
+    # 'setMarginMode',  # Margin/Futures trading
+    # 'fetchFundingHistory', # Futures trading
     # Public
     'fetchOrderBook', 'fetchL2OrderBook', 'fetchTicker',  # OR for pricing
     'fetchTickers',  # For volumepairlist?
     'fetchTrades',  # Downloading trades data
+    # 'fetchFundingRateHistory',  # Futures trading
+    # 'fetchPositions',  # Futures trading
+    # 'fetchLeverageTiers',  # Futures initialization
+    # 'fetchMarketLeverageTiers',  # Futures initialization
 ]
 
 
@@ -74,36 +111,62 @@ def calculate_backoff(retrycount, max_retries):
 def retrier_async(f):
     async def wrapper(*args, **kwargs):
         count = kwargs.pop('count', API_RETRY_COUNT)
+        kucoin = args[0].name == "KuCoin"  # Check if the exchange is KuCoin.
         try:
             return await f(*args, **kwargs)
         except TemporaryError as ex:
-            logger.warning('%s() returned exception: "%s"', f.__name__, ex)
+            msg = f'{f.__name__}() returned exception: "{ex}". '
             if count > 0:
-                logger.warning('retrying %s() still for %s times', f.__name__, count)
+                msg += f'Retrying still for {count} times.'
                 count -= 1
-                kwargs.update({'count': count})
+                kwargs['count'] = count
                 if isinstance(ex, DDosProtection):
-                    backoff_delay = calculate_backoff(count + 1, API_RETRY_COUNT)
-                    logger.info(f"Applying DDosProtection backoff delay: {backoff_delay}")
-                    await asyncio.sleep(backoff_delay)
+                    if kucoin and "429000" in str(ex):
+                        # Temporary fix for 429000 error on kucoin
+                        # see https://github.com/freqtrade/freqtrade/issues/5700 for details.
+                        _get_logging_mixin().log_once(
+                            f"Kucoin 429 error, avoid triggering DDosProtection backoff delay. "
+                            f"{count} tries left before giving up", logmethod=logger.warning)
+                        # Reset msg to avoid logging too many times.
+                        msg = ''
+                    else:
+                        backoff_delay = calculate_backoff(count + 1, API_RETRY_COUNT)
+                        logger.info(f"Applying DDosProtection backoff delay: {backoff_delay}")
+                        await asyncio.sleep(backoff_delay)
+                if msg:
+                    logger.warning(msg)
                 return await wrapper(*args, **kwargs)
             else:
-                logger.warning('Giving up retrying: %s()', f.__name__)
+                logger.warning(msg + 'Giving up.')
                 raise ex
     return wrapper
 
 
-def retrier(_func=None, retries=API_RETRY_COUNT):
-    def decorator(f):
+F = TypeVar('F', bound=Callable[..., Any])
+
+
+# Type shenanigans
+@overload
+def retrier(_func: F) -> F:
+    ...
+
+
+@overload
+def retrier(*, retries=API_RETRY_COUNT) -> Callable[[F], F]:
+    ...
+
+
+def retrier(_func: Optional[F] = None, *, retries=API_RETRY_COUNT):
+    def decorator(f: F) -> F:
         @wraps(f)
         def wrapper(*args, **kwargs):
             count = kwargs.pop('count', retries)
             try:
                 return f(*args, **kwargs)
             except (TemporaryError, RetryableOrderError) as ex:
-                logger.warning('%s() returned exception: "%s"', f.__name__, ex)
+                msg = f'{f.__name__}() returned exception: "{ex}". '
                 if count > 0:
-                    logger.warning('retrying %s() still for %s times', f.__name__, count)
+                    logger.warning(msg + f'Retrying still for {count} times.')
                     count -= 1
                     kwargs.update({'count': count})
                     if isinstance(ex, (DDosProtection, RetryableOrderError)):
@@ -113,9 +176,9 @@ def retrier(_func=None, retries=API_RETRY_COUNT):
                         time.sleep(backoff_delay)
                     return wrapper(*args, **kwargs)
                 else:
-                    logger.warning('Giving up retrying: %s()', f.__name__)
+                    logger.warning(msg + 'Giving up.')
                     raise ex
-        return wrapper
+        return cast(F, wrapper)
     # Support both @retrier and @retrier(retries=2) syntax
     if _func is None:
         return decorator

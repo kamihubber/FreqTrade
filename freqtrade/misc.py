@@ -27,18 +27,23 @@ def decimals_per_coin(coin: str):
     return DECIMALS_PER_COIN.get(coin, DECIMAL_PER_COIN_FALLBACK)
 
 
-def round_coin_value(value: float, coin: str, show_coin_name=True) -> str:
+def round_coin_value(
+        value: float, coin: str, show_coin_name=True, keep_trailing_zeros=False) -> str:
     """
     Get price value for this coin
     :param value: Value to be printed
     :param coin: Which coin are we printing the price / value for
     :param show_coin_name: Return string in format: "222.22 USDT" or "222.22"
+    :param keep_trailing_zeros: Keep trailing zeros "222.200" vs. "222.2"
     :return: Formatted / rounded value (with or without coin name)
     """
+    val = f"{value:.{decimals_per_coin(coin)}f}"
+    if not keep_trailing_zeros:
+        val = val.rstrip('0').rstrip('.')
     if show_coin_name:
-        return f"{value:.{decimals_per_coin(coin)}f} {coin}"
-    else:
-        return f"{value:.{decimals_per_coin(coin)}f}"
+        val = f"{val} {coin}"
+
+    return val
 
 
 def shorten_date(_date: str) -> str:
@@ -79,6 +84,22 @@ def file_dump_json(filename: Path, data: Any, is_zip: bool = False, log: bool = 
     logger.debug(f'done json to "{filename}"')
 
 
+def file_dump_joblib(filename: Path, data: Any, log: bool = True) -> None:
+    """
+    Dump object data into a file
+    :param filename: file to create
+    :param data: Object data to save
+    :return:
+    """
+    import joblib
+
+    if log:
+        logger.info(f'dumping joblib to "{filename}"')
+    with open(filename, 'wb') as fp:
+        joblib.dump(data, fp)
+    logger.debug(f'done joblib dump to "{filename}"')
+
+
 def json_load(datafile: IO) -> Any:
     """
     load data with rapidjson
@@ -109,7 +130,7 @@ def file_load_json(file):
 
 
 def pair_to_filename(pair: str) -> str:
-    for ch in ['/', '-', ' ', '.', '@', '$', '+', ':']:
+    for ch in ['/', ' ', '.', '@', '$', '+', ':']:
         pair = pair.replace(ch, '_')
     return pair
 
@@ -119,10 +140,10 @@ def format_ms_time(date: int) -> str:
     convert MS date to readable format.
     : epoch-string in ms
     """
-    return datetime.fromtimestamp(date/1000.0).strftime('%Y-%m-%dT%H:%M:%S')
+    return datetime.fromtimestamp(date / 1000.0).strftime('%Y-%m-%dT%H:%M:%S')
 
 
-def deep_merge_dicts(source, destination):
+def deep_merge_dicts(source, destination, allow_null_overrides: bool = True):
     """
     Values from Source override destination, destination is returned (and modified!!)
     Sample:
@@ -135,8 +156,8 @@ def deep_merge_dicts(source, destination):
         if isinstance(value, dict):
             # get node or create one
             node = destination.setdefault(key, {})
-            deep_merge_dicts(value, node)
-        else:
+            deep_merge_dicts(value, node, allow_null_overrides)
+        elif value is not None or allow_null_overrides:
             destination[key] = value
 
     return destination

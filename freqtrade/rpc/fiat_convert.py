@@ -7,17 +7,28 @@ import datetime
 import logging
 from typing import Dict, List
 
-from cachetools.ttl import TTLCache
+from cachetools import TTLCache
 from pycoingecko import CoinGeckoAPI
 from requests.exceptions import RequestException
 
 from freqtrade.constants import SUPPORTED_FIAT
+from freqtrade.mixins.logging_mixin import LoggingMixin
 
 
 logger = logging.getLogger(__name__)
 
 
-class CryptoToFiatConverter:
+# Manually map symbol to ID for some common coins
+# with duplicate coingecko entries
+coingecko_mapping = {
+    'eth': 'ethereum',
+    'bnb': 'binancecoin',
+    'sol': 'solana',
+    'usdt': 'tether',
+}
+
+
+class CryptoToFiatConverter(LoggingMixin):
     """
     Main class to initiate Crypto to FIAT.
     This object contains a list of pair Crypto, FIAT
@@ -44,6 +55,7 @@ class CryptoToFiatConverter:
         # Timeout: 6h
         self._pair_price: TTLCache = TTLCache(maxsize=500, ttl=6 * 60 * 60)
 
+        LoggingMixin.__init__(self, logger, 3600)
         self._load_cryptomap()
 
     def _load_cryptomap(self) -> None:
@@ -53,7 +65,7 @@ class CryptoToFiatConverter:
         except RequestException as request_exception:
             if "429" in str(request_exception):
                 logger.warning(
-                    "Too many requests for Coingecko API, backing off and trying again later.")
+                    "Too many requests for CoinGecko API, backing off and trying again later.")
                 # Set backoff timestamp to 60 seconds in the future
                 self._backoff = datetime.datetime.now().timestamp() + 60
                 return
@@ -76,13 +88,17 @@ class CryptoToFiatConverter:
                     return None
             else:
                 return None
-        found = [x for x in self._coinlistings if x['symbol'] == crypto_symbol]
+        found = [x for x in self._coinlistings if x['symbol'].lower() == crypto_symbol]
+
+        if crypto_symbol in coingecko_mapping.keys():
+            found = [x for x in self._coinlistings if x['id'] == coingecko_mapping[crypto_symbol]]
+
         if len(found) == 1:
             return found[0]['id']
 
         if len(found) > 0:
             # Wrong!
-            logger.warning(f"Found multiple mappings in goingekko for {crypto_symbol}.")
+            logger.warning(f"Found multiple mappings in CoinGecko for {crypto_symbol}.")
             return None
 
     def convert_amount(self, crypto_amount: float, crypto_symbol: str, fiat_symbol: str) -> float:
@@ -146,7 +162,7 @@ class CryptoToFiatConverter:
 
     def _find_price(self, crypto_symbol: str, fiat_symbol: str) -> float:
         """
-        Call CoinGekko API to retrieve the price in the FIAT
+        Call CoinGecko API to retrieve the price in the FIAT
         :param crypto_symbol: Crypto-currency you want to convert (e.g btc)
         :param fiat_symbol: FIAT currency you want to convert to (e.g usd)
         :return: float, price of the crypto-currency in Fiat
@@ -163,7 +179,9 @@ class CryptoToFiatConverter:
 
         if not _gekko_id:
             # return 0 for unsupported stake currencies (fiat-convert should not break the bot)
-            logger.warning("unsupported crypto-symbol %s - returning 0.0", crypto_symbol)
+            self.log_once(
+                f"unsupported crypto-symbol {crypto_symbol.upper()} - returning 0.0",
+                logger.warning)
             return 0.0
 
         try:

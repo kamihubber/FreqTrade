@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel
 
 from freqtrade.constants import DATETIME_PRINT_FORMAT
+from freqtrade.enums import OrderTypeValues, SignalDirection, TradingMode
 
 
 class Ping(BaseModel):
@@ -37,6 +38,11 @@ class Balance(BaseModel):
     used: float
     est_stake: float
     stake: str
+    # Starting with 2.x
+    side: str
+    leverage: float
+    is_position: bool
+    position: float
 
 
 class Balances(BaseModel):
@@ -63,6 +69,8 @@ class Count(BaseModel):
 class PerformanceEntry(BaseModel):
     pair: str
     profit: float
+    profit_ratio: float
+    profit_pct: float
     profit_abs: float
     count: int
 
@@ -93,8 +101,13 @@ class Profit(BaseModel):
     avg_duration: str
     best_pair: str
     best_rate: float
+    best_pair_profit_ratio: float
     winning_trades: int
     losing_trades: int
+    profit_factor: float
+    max_drawdown: float
+    max_drawdown_abs: float
+    trading_volume: Optional[float]
 
 
 class SellReason(BaseModel):
@@ -104,13 +117,15 @@ class SellReason(BaseModel):
 
 
 class Stats(BaseModel):
-    sell_reasons: Dict[str, SellReason]
-    durations: Dict[str, Union[str, float]]
+    exit_reasons: Dict[str, SellReason]
+    durations: Dict[str, Optional[float]]
 
 
 class DailyRecord(BaseModel):
     date: date
     abs_profit: float
+    rel_profit: float
+    starting_balance: float
     fiat_value: float
     trade_count: int
 
@@ -121,10 +136,33 @@ class Daily(BaseModel):
     stake_currency: str
 
 
+class UnfilledTimeout(BaseModel):
+    entry: Optional[int]
+    exit: Optional[int]
+    unit: Optional[str]
+    exit_timeout_count: Optional[int]
+
+
+class OrderTypes(BaseModel):
+    entry: OrderTypeValues
+    exit: OrderTypeValues
+    emergency_exit: Optional[OrderTypeValues]
+    force_exit: Optional[OrderTypeValues]
+    force_entry: Optional[OrderTypeValues]
+    stoploss: OrderTypeValues
+    stoploss_on_exchange: bool
+    stoploss_on_exchange_interval: Optional[int]
+
+
 class ShowConfig(BaseModel):
+    version: str
+    strategy_version: Optional[str]
+    api_version: float
     dry_run: bool
+    trading_mode: str
+    short_allowed: bool
     stake_currency: str
-    stake_amount: Union[float, str]
+    stake_amount: str
     available_capital: Optional[float]
     stake_currency_decimals: int
     max_open_trades: int
@@ -134,30 +172,54 @@ class ShowConfig(BaseModel):
     trailing_stop_positive: Optional[float]
     trailing_stop_positive_offset: Optional[float]
     trailing_only_offset_is_reached: Optional[bool]
+    unfilledtimeout: Optional[UnfilledTimeout]  # Empty in webserver mode
+    order_types: Optional[OrderTypes]
     use_custom_stoploss: Optional[bool]
     timeframe: Optional[str]
     timeframe_ms: int
     timeframe_min: int
     exchange: str
     strategy: Optional[str]
-    forcebuy_enabled: bool
-    ask_strategy: Dict[str, Any]
-    bid_strategy: Dict[str, Any]
+    force_entry_enable: bool
+    exit_pricing: Dict[str, Any]
+    entry_pricing: Dict[str, Any]
     bot_name: str
     state: str
     runmode: str
+    position_adjustment_enable: bool
+    max_entry_position_adjustment: int
+
+
+class OrderSchema(BaseModel):
+    pair: str
+    order_id: str
+    status: str
+    remaining: Optional[float]
+    amount: float
+    safe_price: float
+    cost: float
+    filled: Optional[float]
+    ft_order_side: str
+    order_type: str
+    is_open: bool
+    order_timestamp: Optional[int]
+    order_filled_timestamp: Optional[int]
 
 
 class TradeSchema(BaseModel):
     trade_id: int
     pair: str
+    base_currency: str
+    quote_currency: str
     is_open: bool
+    is_short: bool
     exchange: str
     amount: float
     amount_requested: float
     stake_amount: float
     strategy: str
-    buy_tag: Optional[str]
+    buy_tag: Optional[str]  # Deprecated
+    enter_tag: Optional[str]
     timeframe: int
     fee_open: Optional[float]
     fee_open_cost: Optional[float]
@@ -181,8 +243,9 @@ class TradeSchema(BaseModel):
     profit_pct: Optional[float]
     profit_abs: Optional[float]
     profit_fiat: Optional[float]
-    sell_reason: Optional[str]
-    sell_order_status: Optional[str]
+    sell_reason: Optional[str]  # Deprecated
+    exit_reason: Optional[str]
+    exit_order_status: Optional[str]
     stop_loss_abs: Optional[float]
     stop_loss_ratio: Optional[float]
     stop_loss_pct: Optional[float]
@@ -195,6 +258,13 @@ class TradeSchema(BaseModel):
     min_rate: Optional[float]
     max_rate: Optional[float]
     open_order_id: Optional[str]
+    orders: List[OrderSchema]
+
+    leverage: Optional[float]
+    interest_rate: Optional[float]
+    liquidation_price: Optional[float]
+    funding_fees: Optional[float]
+    trading_mode: Optional[TradingMode]
 
 
 class OpenTradeSchema(TradeSchema):
@@ -213,10 +283,11 @@ class OpenTradeSchema(TradeSchema):
 class TradeResponse(BaseModel):
     trades: List[TradeSchema]
     trades_count: int
+    offset: int
     total_trades: int
 
 
-class ForceBuyResponse(BaseModel):
+class ForceEnterResponse(BaseModel):
     __root__: Union[TradeSchema, StatusMsg]
 
 
@@ -228,6 +299,7 @@ class LockModel(BaseModel):
     lock_time: str
     lock_timestamp: int
     pair: str
+    side: str
     reason: str
 
 
@@ -246,13 +318,20 @@ class Logs(BaseModel):
     logs: List[List]
 
 
-class ForceBuyPayload(BaseModel):
+class ForceEnterPayload(BaseModel):
     pair: str
+    side: SignalDirection = SignalDirection.LONG
     price: Optional[float]
+    ordertype: Optional[OrderTypeValues]
+    stakeamount: Optional[float]
+    entry_tag: Optional[str]
+    leverage: Optional[float]
 
 
-class ForceSellPayload(BaseModel):
+class ForceExitPayload(BaseModel):
     tradeid: str
+    ordertype: Optional[OrderTypeValues]
+    amount: Optional[float]
 
 
 class BlacklistPayload(BaseModel):
@@ -314,6 +393,10 @@ class PairHistory(BaseModel):
     length: int
     buy_signals: int
     sell_signals: int
+    enter_long_signals: int
+    exit_long_signals: int
+    enter_short_signals: int
+    exit_short_signals: int
     last_analyzed: datetime
     last_analyzed_ts: int
     data_start_ts: int
@@ -333,7 +416,7 @@ class BacktestRequest(BaseModel):
     timeframe_detail: Optional[str]
     timerange: Optional[str]
     max_open_trades: Optional[int]
-    stake_amount: Optional[Union[float, str]]
+    stake_amount: Optional[str]
     enable_protections: bool
     dry_run_wallet: Optional[float]
 
@@ -347,3 +430,20 @@ class BacktestResponse(BaseModel):
     trade_count: Optional[float]
     # TODO: Properly type backtestresult...
     backtest_result: Optional[Dict[str, Any]]
+
+
+class BacktestHistoryEntry(BaseModel):
+    filename: str
+    strategy: str
+    run_id: str
+    backtest_start_time: int
+
+
+class SysInfo(BaseModel):
+    cpu_pct: List[float]
+    ram_pct: float
+
+
+class Health(BaseModel):
+    last_process: datetime
+    last_process_ts: int

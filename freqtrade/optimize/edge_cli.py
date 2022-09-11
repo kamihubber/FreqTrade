@@ -34,7 +34,7 @@ class EdgeCli:
         self.config['stake_amount'] = constants.UNLIMITED_STAKE_AMOUNT
         self.exchange = ExchangeResolver.load_exchange(self.config['exchange']['name'], self.config)
         self.strategy = StrategyResolver.load_strategy(self.config)
-        self.strategy.dp = DataProvider(config, None)
+        self.strategy.dp = DataProvider(config, self.exchange)
 
         validate_config_consistency(self.config)
 
@@ -44,6 +44,7 @@ class EdgeCli:
 
         self.edge._timerange = TimeRange.parse_timerange(None if self.config.get(
             'timerange') is None else str(self.config.get('timerange')))
+        self.strategy.ft_bot_start()
 
     def start(self) -> None:
         result = self.edge.calculate(self.config['exchange']['pair_whitelist'])
